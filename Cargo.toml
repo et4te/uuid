@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Edward Tate <cmalune@gmail.com>"]
 repository = "https://github.com/et4te/uuid"
 license = "MIT"
+exclude = [ ".gitignore" ]
 
 [dependencies]
 rustc-serialize = "0.3"
