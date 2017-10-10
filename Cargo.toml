@@ -1,5 +1,5 @@
 [package]
-name = "uuid"
+name = "uuid_v1_variant"
 version = "0.1.0"
 authors = ["Edward Tate <cmalune@gmail.com>"]
 
