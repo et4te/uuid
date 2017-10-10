@@ -48,17 +48,17 @@ impl UUID {
         let nanosec_bytes = nanosecs_since_unix_epoch();
 
         let mut rng = rand::thread_rng();
-        let r1 = rng.gen::<[u8; 2]>();
+        let r = rng.gen::<[u8; 2]>();
 
         let mut bytes = [0; 8];
-        bytes[0] = r1[0] ^ nanosec_bytes[0];
-        bytes[1] = self.mac[0] ^ nanosec_bytes[1];
-        bytes[2] = self.mac[1] ^ nanosec_bytes[2];
-        bytes[3] = self.mac[2] ^ nanosec_bytes[3];
-        bytes[4] = self.mac[3] ^ nanosec_bytes[4];
-        bytes[5] = self.mac[4] ^ nanosec_bytes[5];
-        bytes[6] = self.mac[5] ^ nanosec_bytes[6];
-        bytes[7] = r1[1] ^ nanosec_bytes[7];
+        bytes[0] = nanosec_bytes[0] ^ self.mac[0];
+        bytes[1] = nanosec_bytes[1] ^ self.mac[1];
+        bytes[2] = nanosec_bytes[2] ^ self.mac[2];
+        bytes[3] = nanosec_bytes[3] ^ self.mac[3];
+        bytes[4] = nanosec_bytes[4] ^ self.mac[4];
+        bytes[5] = nanosec_bytes[5] ^ self.mac[5];
+        bytes[6] = nanosec_bytes[6] ^ r[0];
+        bytes[7] = nanosec_bytes[7] ^ r[1];
         bytes
     }
 
@@ -124,13 +124,24 @@ fn nanosecs_since_unix_epoch() -> [u8; 8] {
 mod tests {
     use super::*;
     use rustc_serialize::hex::ToHex;
-
+    use std::collections::HashMap;
 
     #[test]
     fn generate_uuid() {
         let uuid = UUID::new("enp0s31f6");
 
-        println!("{:?}", uuid.generate_nonce().to_hex());
-        println!("{:?}", uuid.generate().to_hex());
+        let mut m = HashMap::new();
+
+        for _ in 1..1_000_000 {
+            let nonce = uuid.generate_nonce().to_hex();
+            match m.get(&nonce) {
+                Some(_) => {
+                    println!("collision => {:?}", nonce);
+                },
+                None => {
+                    m.insert(nonce.clone(), ());
+                }
+            }
+        }
     }
 }
