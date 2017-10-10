@@ -1,0 +1,8 @@
+[package]
+name = "uuid"
+version = "0.1.0"
+authors = ["Edward Tate <cmalune@gmail.com>"]
+
+[dependencies]
+rustc-serialize = "0.3"
+rand = "0.3"
