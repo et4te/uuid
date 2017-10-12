@@ -7,6 +7,11 @@ repository = "https://github.com/et4te/uuid"
 license = "MIT"
 exclude = [ ".gitignore" ]
 
+[lib]
+name = "uuid_v1_variant"
+crate-type = ["staticlib"]
+
 [dependencies]
-rustc-serialize = "0.3"
 rand = "0.3"
+rustc-serialize = "0.3"
+eui48 = "0.3"
