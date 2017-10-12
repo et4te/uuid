@@ -1,76 +1,92 @@
+#![feature(libc)]
+
+extern crate libc;
 extern crate rustc_serialize;
 extern crate rand;
+extern crate eui48;
 
+use libc::{c_char, uint8_t};
 use std::path::Path;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::ffi::CStr;
 use rand::Rng;
 use rustc_serialize::hex::FromHex;
+use eui48::{MacAddress, Eui48};
+
+//------------------------------------------------------------------------------
+
+#[no_mangle]
+pub extern fn uuid_new(ptr: *const c_char) -> *mut UUID {
+    let eui_cstr = unsafe {
+        assert!(!ptr.is_null());
+        CStr::from_ptr(ptr)
+    };
+    let mut eui: [u8; 6] = Default::default();
+    eui.copy_from_slice(&eui_cstr.to_bytes()[0..6]);
+    Box::into_raw(Box::new(UUID::new(eui)))
+}
+
+#[no_mangle]
+pub extern fn uuid_free(ptr: *mut UUID) {
+    if ptr.is_null() { return }
+    unsafe {
+        Box::from_raw(ptr);
+    }
+}
+
+#[no_mangle]
+pub extern fn uuid_generate_nonce64(ptr: *mut UUID) -> *const u8 {
+    let uuid = unsafe {
+        assert!(!ptr.is_null());
+        &mut *ptr
+    };
+    let nonce64: [u8; 8] = uuid.generate_nonce64();
+    let nonce64 = &nonce64[0..8];
+    &(*nonce64)[0]
+}
 
 //------------------------------------------------------------------------------
 
 #[derive(Debug)]
-pub struct UUID {
-    mac: Vec<u8>,
-}
+pub struct UUID(MacAddress);
 
 impl UUID {
 
-    pub fn new(iface: &str) -> UUID {
-        let path = Path::new("/sys/class/net").join(Path::new(iface)).join("address");
-
-        let f = File::open(path)
-            .expect("Network interface not found.");
-
-        let mut reader = BufReader::new(f);
-        let mut line = String::new();
-
-        reader.read_line(&mut line)
-            .expect("Unable to read iface.");
-
-        let mut mac_address = String::new();
-        for _ in 0..6 {
-            let s: String = line.drain(0..2).collect();
-            line.drain(0..1);
-            mac_address = mac_address + &s;
-        }
-
-        let mac = mac_address.from_hex()
-            .expect("Unable to decode mac address.");
-
-        UUID { mac: mac }
+    pub fn new(eui: Eui48) -> UUID {
+        UUID(MacAddress::new(eui))
     }
 
-    // Generates a 64-bit nonce. (should not be used as a UUID)
-    pub fn generate_nonce(&self) -> [u8; 8] {
+    // Generates a 64-bit nonce. This should not be used as a UUID.
+    pub fn generate_nonce64(&self) -> [u8; 8] {
         let nanosec_bytes = nanosecs_since_unix_epoch();
 
         let mut rng = rand::thread_rng();
         let r = rng.gen::<[u8; 2]>();
 
+        let mac_bytes = self.0.as_bytes();
         let mut bytes = [0; 8];
-        bytes[0] = nanosec_bytes[0] ^ self.mac[0];
-        bytes[1] = nanosec_bytes[1] ^ self.mac[1];
-        bytes[2] = nanosec_bytes[2] ^ self.mac[2];
-        bytes[3] = nanosec_bytes[3] ^ self.mac[3];
-        bytes[4] = nanosec_bytes[4] ^ self.mac[4];
-        bytes[5] = nanosec_bytes[5] ^ self.mac[5];
+        bytes[0] = nanosec_bytes[0] ^ mac_bytes[0];
+        bytes[1] = nanosec_bytes[1] ^ mac_bytes[1];
+        bytes[2] = nanosec_bytes[2] ^ mac_bytes[2];
+        bytes[3] = nanosec_bytes[3] ^ mac_bytes[3];
+        bytes[4] = nanosec_bytes[4] ^ mac_bytes[4];
+        bytes[5] = nanosec_bytes[5] ^ mac_bytes[5];
         bytes[6] = nanosec_bytes[6] ^ r[0];
         bytes[7] = nanosec_bytes[7] ^ r[1];
         bytes
     }
 
-    // A variant of the v1 UUID (128-bit) where the main difference is performing
-    // an xor on the mac address with a random set of bytes so that the mac address
-    // does not get revealed.
-    pub fn generate(&self) -> [u8; 16] {
+    // A variant of the v1 UUID (128-bit).
+    pub fn generate128(&self) -> [u8; 16] {
         let nanosec_bytes = nanosecs_since_unix_epoch();
 
         let mut rng = rand::thread_rng();
         let r = rng.gen::<[u8; 8]>();
 
+        let mac_bytes = self.0.as_bytes();
         let mut bytes = [0; 16];
         bytes[0] = nanosec_bytes[0];
         bytes[1] = nanosec_bytes[1];
@@ -80,12 +96,12 @@ impl UUID {
         bytes[5] = nanosec_bytes[5];
         bytes[6] = nanosec_bytes[6];
         bytes[7] = nanosec_bytes[7];
-        bytes[8] = self.mac[0] ^ r[0];
-        bytes[9] = self.mac[1] ^ r[1];
-        bytes[10] = self.mac[2] ^ r[2];
-        bytes[11] = self.mac[3] ^ r[3];
-        bytes[12] = self.mac[4] ^ r[4];
-        bytes[13] = self.mac[5] ^ r[5];
+        bytes[8] = mac_bytes[0];
+        bytes[9] = mac_bytes[1];
+        bytes[10] = mac_bytes[2];
+        bytes[11] = mac_bytes[3];
+        bytes[12] = mac_bytes[4];
+        bytes[13] = mac_bytes[5];
         bytes[14] = r[6];
         bytes[15] = r[7];
         bytes
@@ -120,6 +136,35 @@ fn nanosecs_since_unix_epoch() -> [u8; 8] {
     little_endian_inv64(nanosecs)
 }
 
+// Linux only interface Eui48 read.
+pub fn read_interface_eui(iface: &str) -> Eui48 {
+    let path = Path::new("/sys/class/net").join(Path::new(iface)).join("address");
+
+    let f = File::open(path)
+        .expect("Network interface not found.");
+
+    let mut reader = BufReader::new(f);
+    let mut line = String::new();
+
+    reader.read_line(&mut line)
+        .expect("Unable to read iface.");
+
+    let mut eui: Eui48 = [0; 6];
+    for i in 0..6 {
+        let byte: String = line.drain(0..2).collect();
+        line.drain(0..1);
+        let byte_v = byte.from_hex()
+            .expect(format!("Failed to decode mac_address byte {}", i).as_str());
+        eui[i] = byte_v[0];
+    }
+
+    eui
+}
+
+//------------------------------------------------------------------------------
+// Tests
+//------------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,12 +173,13 @@ mod tests {
 
     #[test]
     fn generate_uuid() {
-        let uuid = UUID::new("enp0s31f6");
+        let eui = read_interface_eui("enp0s31f6");
+        let uuid = UUID::new(eui);
 
         let mut m = HashMap::new();
 
         for _ in 1..1_000_000 {
-            let nonce = uuid.generate_nonce().to_hex();
+            let nonce = uuid.generate_nonce64().to_hex();
             match m.get(&nonce) {
                 Some(_) => {
                     println!("collision => {:?}", nonce);
