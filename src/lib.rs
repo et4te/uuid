@@ -11,7 +11,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::ffi::{CString, CStr};
+use std::ffi::CStr;
 use rand::Rng;
 use rustc_serialize::hex::FromHex;
 use eui48::{MacAddress, Eui48};
@@ -175,7 +175,7 @@ pub fn read_interface_eui(iface: &str) -> Eui48 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // use super::*;
 
     #[test]
     fn uuid_gen() {
