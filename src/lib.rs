@@ -5,13 +5,13 @@ extern crate rustc_serialize;
 extern crate rand;
 extern crate eui48;
 
-use libc::{c_char, uint8_t};
+use libc::{c_char};
 use std::path::Path;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::ffi::CStr;
+use std::ffi::{CString, CStr};
 use rand::Rng;
 use rustc_serialize::hex::FromHex;
 use eui48::{MacAddress, Eui48};
@@ -19,18 +19,18 @@ use eui48::{MacAddress, Eui48};
 //------------------------------------------------------------------------------
 
 #[no_mangle]
-pub extern fn uuid_new(ptr: *const c_char) -> *mut UUID {
+pub extern fn uuid_gen_new(ptr: *const c_char) -> *mut UUIDGen {
     let eui_cstr = unsafe {
         assert!(!ptr.is_null());
         CStr::from_ptr(ptr)
     };
     let mut eui: [u8; 6] = Default::default();
     eui.copy_from_slice(&eui_cstr.to_bytes()[0..6]);
-    Box::into_raw(Box::new(UUID::new(eui)))
+    Box::into_raw(Box::new(UUIDGen::new(eui)))
 }
 
 #[no_mangle]
-pub extern fn uuid_free(ptr: *mut UUID) {
+pub extern fn uuid_gen_free(ptr: *mut UUIDGen) {
     if ptr.is_null() { return }
     unsafe {
         Box::from_raw(ptr);
@@ -38,33 +38,41 @@ pub extern fn uuid_free(ptr: *mut UUID) {
 }
 
 #[no_mangle]
-pub extern fn uuid_generate_nonce64(ptr: *mut UUID) -> *const u8 {
-    let uuid = unsafe {
-        assert!(!ptr.is_null());
-        &mut *ptr
+pub extern fn uuid_gen_nonce64(gen_ptr: *mut UUIDGen, nonce_ptr: *mut u8) {
+    let gen = unsafe {
+        assert!(!gen_ptr.is_null());
+        &mut *gen_ptr
     };
-    let nonce64: [u8; 8] = uuid.generate_nonce64();
-    let nonce64 = &nonce64[0..8];
-    &(*nonce64)[0]
+    let nonce64: [u8; 8] = gen.nonce64();
+    let nonce64: &[u8] = &nonce64[0..8];
+    unsafe { std::ptr::copy(&(nonce64)[0], nonce_ptr, 8) }
+}
+
+#[no_mangle]
+pub extern fn uuid_gen_uuid128(gen_ptr: *mut UUIDGen, uuid_ptr: *mut u8) {
+    let gen = unsafe {
+        assert!(!gen_ptr.is_null());
+        &mut *gen_ptr
+    };
+    let uuid128: [u8; 16] = gen.uuid128();
+    let uuid128: &[u8] = &uuid128[0..16];
+    unsafe { std::ptr::copy(&(uuid128)[0], uuid_ptr, 16) }
 }
 
 //------------------------------------------------------------------------------
 
 #[derive(Debug)]
-pub struct UUID(MacAddress);
+pub struct UUIDGen(MacAddress);
 
-impl UUID {
+impl UUIDGen {
 
-    pub fn new(eui: Eui48) -> UUID {
-        UUID(MacAddress::new(eui))
+    pub fn new(eui: Eui48) -> UUIDGen {
+        UUIDGen(MacAddress::new(eui))
     }
 
     // Generates a 64-bit nonce. This should not be used as a UUID.
-    pub fn generate_nonce64(&self) -> [u8; 8] {
+    pub fn nonce64(&self) -> [u8; 8] {
         let nanosec_bytes = nanosecs_since_unix_epoch();
-
-        let mut rng = rand::thread_rng();
-        let r = rng.gen::<[u8; 2]>();
 
         let mac_bytes = self.0.as_bytes();
         let mut bytes = [0; 8];
@@ -74,13 +82,13 @@ impl UUID {
         bytes[3] = nanosec_bytes[3] ^ mac_bytes[3];
         bytes[4] = nanosec_bytes[4] ^ mac_bytes[4];
         bytes[5] = nanosec_bytes[5] ^ mac_bytes[5];
-        bytes[6] = nanosec_bytes[6] ^ r[0];
-        bytes[7] = nanosec_bytes[7] ^ r[1];
+        bytes[6] = nanosec_bytes[6];
+        bytes[7] = nanosec_bytes[7];
         bytes
     }
 
     // A variant of the v1 UUID (128-bit).
-    pub fn generate128(&self) -> [u8; 16] {
+    pub fn uuid128(&self) -> [u8; 16] {
         let nanosec_bytes = nanosecs_since_unix_epoch();
 
         let mut rng = rand::thread_rng();
@@ -168,26 +176,9 @@ pub fn read_interface_eui(iface: &str) -> Eui48 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustc_serialize::hex::ToHex;
-    use std::collections::HashMap;
 
     #[test]
-    fn generate_uuid() {
-        let eui = read_interface_eui("enp0s31f6");
-        let uuid = UUID::new(eui);
-
-        let mut m = HashMap::new();
-
-        for _ in 1..1_000_000 {
-            let nonce = uuid.generate_nonce64().to_hex();
-            match m.get(&nonce) {
-                Some(_) => {
-                    println!("collision => {:?}", nonce);
-                },
-                None => {
-                    m.insert(nonce.clone(), ());
-                }
-            }
-        }
+    fn uuid_gen() {
+        // ...
     }
 }
