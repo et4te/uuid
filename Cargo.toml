@@ -1,6 +1,6 @@
 [package]
 name = "uuid_v1_variant"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Edward Tate <cmalune@gmail.com>"]
 description = "A variant of UUID v1 (128bit) and 64bit nonce."
 repository = "https://github.com/et4te/uuid"
